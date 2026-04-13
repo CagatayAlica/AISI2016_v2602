@@ -5,3 +5,4 @@ pandas
 numpy
 ezdxf
 fpdf2
+reportlab
