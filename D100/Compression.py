@@ -143,4 +143,3 @@ class Compression_calc:
     def __str__(self):
         rep = f'{secDivider}\nCHAPTER F, MEMBERS IN FLEXURE\n{secDivider}\n'
         return rep
-

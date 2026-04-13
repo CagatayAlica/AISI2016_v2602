@@ -33,6 +33,7 @@ class C_Section:
         :param R: Inner radius
         :param angle: Orientation angle in degrees
         """
+        self.grossProps = None
         self.ry = None
         self.rx = None
         self.descp_Plot_inches = None
@@ -84,6 +85,21 @@ class C_Section:
         self.zgy = None
         self.Ar = None
         self.calculateGross()
+        self.toJSON = {"ID": 'C',
+                       "Gross": self.grossProps,
+                       "A" : self.A,
+                       "B" : self.B,
+                       "C" : self.C,
+                       "t" : self.t,
+                       "R" : self.R,
+                       "aa" : self.aa,
+                       "bb" : self.bb,
+                       "cc" : self.cc,
+                       "tcore" : self.tcore,
+                       "a" : self.a,
+                       "b" : self.b,
+                       "c" : self.c,
+                       "Nodes" : self.nodes.tolist()}
 
     def centerline(self):
         self.r = self.R + self.t / 2.0
@@ -242,9 +258,9 @@ class C_Section:
             self.elements[i, 3] = self.t
             self.elements[i, 4] = 0
 
-        self.descp_Plot = f'Section :C {self.A:.3f} x {self.B:.3f} x {self.C:.3f} - {self.t:.3f}'
-        self.descp_Plot_inches = f'Section :C {self.A/25.4:.3f} x {self.B/25.4:.3f} x {self.C/25.4:.3f} - {self.t/25.4:.4f}'
-        self.descp_rep = (f'Section :C {self.A:.3f} x {self.B:.3f} x {self.C:.3f} - {self.t:.3f}\n'
+        self.descp_Plot = f'C {self.A:.3f} x {self.B:.3f} x {self.C:.3f} - {self.t:.3f}'
+        self.descp_Plot_inches = f'C {self.A/25.4:.3f} x {self.B/25.4:.3f} x {self.C/25.4:.3f} - {self.t/25.4:.4f}'
+        self.descp_rep = (f'C {self.A:.3f} x {self.B:.3f} x {self.C:.3f} - {self.t:.3f}\n'
                           f'   A:{self.A:.3f} in, Web height\n'
                           f'   B:{self.B:.3f} in, Flange width\n'
                           f'   C:{self.C:.3f} in, Lip length\n'
@@ -362,6 +378,25 @@ class C_Section:
         self.rx = math.sqrt(self.Ix / self.Ar)
         self.ry = math.sqrt(self.Iy / self.Ar)
         # Data dictionary
+        self.grossProps = {
+            "Ar ": self.Ar,
+            "zgx ": self.zgx,
+            "zgy ": self.zgy,
+            "Ix ": self.Ix,
+            "Wx ": self.Ix / max(self.zgb, self.zgt),
+            "rx ": math.sqrt(self.Ix / self.Ar),
+            "Iy ": self.Iy,
+            "Wy ": self.Iy / max(self.zgl, self.zgr),
+            "ry ": math.sqrt(self.Iy / self.Ar),
+            "Ixy ": self.Ixy,
+            "Iw ": np.sum(self.Cw),
+            "xsc ": self.xsc,
+            "ysc ": self.ysc,
+            "Cw ": self.Cw,
+            "It ": self.It,
+            "xo ": self.xo,
+            "ro ": math.sqrt(math.sqrt(self.Ix / self.Ar)**2+math.sqrt(self.Iy / self.Ar)**2+self.xo**2)
+        }
         self.propDict = {
             "Ar ": str(round(self.Ar, 3)) + " mm2",
             "zgx ": str(round(self.zgx, 3)) + " mm",

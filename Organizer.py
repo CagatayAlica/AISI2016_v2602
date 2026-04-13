@@ -31,8 +31,9 @@ factors = step1.values
 modes_total = len(step1.values)
 print(f'modes : {modes_total}')
 AxialCalc= comp.Compression_calc(sec,mat,factors[0][2],factors[1][2],defs.Kx,defs.Lx,defs.Ky,defs.Ly,defs.Kt,defs.Lt)
-
+print(AxialCalc)
 print(AxialCalc.report())
+
 # ======================================================================================================================
 # Calculation for Bending
 # ======================================================================================================================
