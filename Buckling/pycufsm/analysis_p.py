@@ -121,7 +121,13 @@ def k_kg_global(
         thick = elements[i, 3]
         b_strip = el_props[i, 1]
         mat_num = int(elements[i, 4])
-        row = int((np.argwhere(props[:, 0] == mat_num)).reshape(1))
+        #row = int((np.argwhere(props[:, 0] == mat_num)).reshape(1))
+        match = np.where(props[:, 0] == mat_num)[0]
+        if len(match) > 0:
+            row = int(match[0])
+        else:
+            # Fallback or error handling if material ID is missing
+            row = 0
         E_x = props[row, 1]
         E_y = props[row, 2]
         nu_x = props[row, 3]
