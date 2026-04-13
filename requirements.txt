@@ -6,3 +6,4 @@ numpy
 ezdxf
 fpdf2
 reportlab
+matplotlib
