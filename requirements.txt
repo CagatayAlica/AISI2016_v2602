@@ -7,3 +7,5 @@ ezdxf
 fpdf2
 reportlab
 matplotlib
+mplcursors
+scipy
