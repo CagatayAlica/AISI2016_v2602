@@ -128,6 +128,7 @@ def k_kg_global(
         else:
             # Fallback or error handling if material ID is missing
             row = 0
+
         E_x = props[row, 1]
         E_y = props[row, 2]
         nu_x = props[row, 3]
