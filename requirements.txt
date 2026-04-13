@@ -1,0 +1,6 @@
+streamlit
+openseespy
+plotly
+pandas
+numpy
+ezdxf
