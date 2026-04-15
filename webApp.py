@@ -942,6 +942,7 @@ elif app_mode == "Beam Solver":
             # Opensees solver function
             analysis_for_combination = run_beam_solver(beam_L, supp_data, pload_data, uload_data)
 
+
             # Store in session state for the PDF report
             st.session_state.max_vals = analysis_for_combination[1] #max_vals
 
