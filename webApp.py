@@ -164,6 +164,151 @@ def load_section_library(filename="section_library.json"):
             return json.load(f)
     return {}
 
+def run_beam_solver(beam_Length, support_data, point_loads, uniform_loads):
+    """
+    Runs OpenSees analysis for a given set of loads.
+    :param beam_Length:
+    :param support_data: supp_data
+    :param point_loads: pload_data
+    :param uniform_loads: uload_data
+    :return: (df_results [0], max_vals [1], res_x [2], res_axial [3], res_shear [4], res_moment [5], res_disp [6])
+    """
+
+    # 1. GENERATE NODES (Including sub-discretization for smooth curves)
+    # Create nodes at points of interest
+    poi = [0.0, beam_Length] + support_data['x'].tolist() + point_loads['x'].tolist() + \
+          uniform_loads['x_start'].tolist() + uniform_loads['x_end'].tolist()
+
+    # Add extra points every 100mm to make diagrams smooth
+    extra_points = np.linspace(0, beam_Length, int(beam_Length / 100)).tolist()
+    raw_nodes = poi + extra_points
+
+    node_coords = sorted(list(set([round(x, 2) for x in raw_nodes if 0 <= x <= beam_Length])))
+
+    # 2. OPENSEES SOLVER
+    ops.wipe()
+    ops.model('basic', '-ndm', 2, '-ndf', 3)
+
+    for i, x in enumerate(node_coords):
+        ops.node(i + 1, x, 0.0)
+
+    # Boundary Conditions
+    for _, s in supp_data.iterrows():
+        # 1. Find the index of the node closest to the support X-coordinate
+        # This prevents errors if there are small rounding differences
+        idx = int(np.argmin([abs(x - s['x']) for x in node_coords]))
+
+        # 2. OpenSees tags are 1-based. Force to standard Python int.
+        n_tag = int(idx + 1)
+
+        # 3. Apply fixity based on the type string
+        try:
+            if s['type'] == 'Pin':
+                ops.fix(n_tag, 1, 1, 0)
+            elif s['type'] == 'Roller':
+                ops.fix(n_tag, 0, 1, 0)
+            elif s['type'] == 'Fixed':
+                ops.fix(n_tag, 1, 1, 1)
+        except Exception as e:
+            st.error(f"Failed to apply support at x={s['x']}: {e}")
+
+    ops.geomTransf('Linear', 1)
+    for i in range(len(node_coords) - 1):
+        ops.element('elasticBeamColumn', i + 1, i + 1, i + 2, 1000.0, E_mod, I_val, 1)
+
+    ops.timeSeries('Linear', 1)
+    ops.pattern('Plain', 1, 1)
+
+    # Point Loads
+    for _, p in pload_data.iterrows():
+        n_tag = int(np.argmin([abs(x - p['x']) for x in node_coords]) + 1)
+        force_n = float(p['mag']) * 1000
+
+        if p['axis'] == 'Y':
+            ops.load(n_tag, 0.0, force_n, 0.0)  # [Fx, Fy, M] -> Fy is index 2
+        else:
+            ops.load(n_tag, force_n, 0.0, 0.0)  # [Fx, Fy, M] -> Fx is index 1
+
+    # Uniform Loads
+    for _, u in uload_data.iterrows():
+        mag_val = float(u['mag'])
+        for i in range(len(node_coords) - 1):
+            if node_coords[i] >= u['x_start'] and node_coords[i + 1] <= u['x_end']:
+                if u['axis'] == 'Y':
+                    # '-beamUniform' second argument is transverse load
+                    ops.eleLoad('-ele', i + 1, '-type', '-beamUniform', mag_val)
+                else:
+                    # Axial loads usually require '-beamUniform' with axial component defined
+                    # or using '-beamPoint' for distributed axial if needed.
+                    # Standard beamUniform in OpenSees typically handles transverse.
+                    # For distributed axial, we apply it as an elemental axial force.
+                    ops.eleLoad('-ele', i + 1, '-type', '-beamUniform', 0.0, mag_val)
+
+    ops.constraints('Transformation')
+    ops.numberer('RCM')
+    ops.system('BandGeneral')
+    ops.test('NormDispIncr', 1.0e-6, 10)
+    ops.algorithm('Linear')
+    ops.integrator('LoadControl', 1.0)
+    ops.analysis('Static')
+    ops.analyze(1)
+
+    # --- 3. EXTRACT RESULTS ---
+    res_x, res_axial, res_shear, res_moment, res_disp = [], [], [], [], []
+    element_results = []  # New list for CSV data
+
+    for i, x in enumerate(node_coords):
+        res_x.append(x)
+        res_disp.append(ops.nodeDisp(i + 1, 2))
+
+        if i < len(node_coords) - 1:
+            # force = [Fx1, Fy1, M1, Fx2, Fy2, M2]
+            f = ops.eleResponse(i + 1, 'force')
+
+            # 1. Store for plotting
+            res_axial.append(-f[0] / 1000)
+            res_shear.append(f[1] / 1000)
+            res_moment.append(-f[2] / 1e6)
+
+            # 2. Store for CSV Export
+            element_results.append({
+                "Element_ID": i + 1,
+                "Node_Start": i + 1,
+                "Node_End": i + 2,
+                "X_Start_mm": x,
+                "X_End_mm": node_coords[i + 1],
+                "Axial_Start_kN": -f[0] / 1000,
+                "Shear_Start_kN": f[1] / 1000,
+                "Moment_Start_kNm": -f[2] / 1e6,
+                "Axial_End_kN": f[3] / 1000,
+                "Shear_End_kN": -f[4] / 1000,
+                "Moment_End_kNm": f[5] / 1e6
+            })
+        else:
+            # Handling the very last node for plotting
+            f_last = ops.eleResponse(i, 'force')
+            res_axial.append(f_last[3] / 1000)
+            res_shear.append(-f_last[4] / 1000)
+            res_moment.append(f_last[5] / 1e6)
+
+    # Create the DataFrame
+    df_export = pd.DataFrame(element_results)
+
+    # --- FIND PEAK VALUES AND LOCATIONS ---
+    # We use absolute maximums for structural design capacity checks
+    idx_max_disp = np.argmax(np.abs(res_disp))
+    idx_max_axial = np.argmax(np.abs(res_axial))
+    idx_max_shear = np.argmax(np.abs(res_shear))
+    idx_max_moment = np.argmax(np.abs(res_moment))
+
+    max_vals = {
+        "Max Displacement": {"val": res_disp[idx_max_disp], "x": res_x[idx_max_disp], "unit": "mm"},
+        "Max Axial": {"val": res_axial[idx_max_axial], "x": res_x[idx_max_axial], "unit": "kN"},
+        "Max Shear": {"val": res_shear[idx_max_shear], "x": res_x[idx_max_shear], "unit": "kN"},
+        "Max Moment": {"val": res_moment[idx_max_moment], "x": res_x[idx_max_moment], "unit": "kNm"}
+    }
+    return df_export, max_vals, res_x, res_axial, res_shear, res_moment, res_disp
+
 def plot_beam_results(results_df, L, supp_df, pload_df, uload_df):
     # Create 4 rows now. Row 1 is the Schematic.
     fig = make_subplots(
@@ -768,15 +913,12 @@ elif app_mode == "Beam Solver":
             num_rows="dynamic", key="supp_editor"
         )
 
-
-
-
         # --- INPUT LOADS ---
         st.subheader("2. Point Loads")
         pload_data = st.data_editor(
             pd.DataFrame([{'x': 1500.0, 'case': 'Dead', 'axis': 'Y', 'mag': -10.0}]),
             column_config={
-                "case": st.column_config.SelectboxColumn("Load Case", options=["Dead", "Live", "Wind", "Snow", "Earthquake"], required=True),
+                "case": st.column_config.SelectboxColumn("Load Case", options=["Dead", "Live", "Roof Live", "Wind_1", "Wind_2", "Snow", "Earthquake"], required=True),
                 "axis": st.column_config.SelectboxColumn("Axis", options=["X", "Y"], required=True),
                 "mag": st.column_config.NumberColumn("Magnitude (kN)", format="%.2f")
             },
@@ -786,9 +928,9 @@ elif app_mode == "Beam Solver":
         st.subheader("3. Uniform Loads")
         uload_data = st.data_editor(
             pd.DataFrame([{'x_start': 0.0, 'x_end': beam_L, 'case': 'Dead', 'axis': 'Y', 'mag': -5.0},
-                          {'x_start': 0.0, 'x_end': beam_L, 'case': 'Live', 'axis': 'Y', 'mag': -4.0}]),
+                          {'x_start': 0.0, 'x_end': beam_L / 2.0, 'case': 'Live', 'axis': 'Y', 'mag': -4.0}]),
             column_config={
-                "case": st.column_config.SelectboxColumn("Load Case", options=["Dead", "Live", "Wind", "Snow", "Earthquake"], required=True),
+                "case": st.column_config.SelectboxColumn("Load Case", options=["Dead", "Live", "Roof Live", "Wind_1", "Wind_2", "Snow", "Earthquake"], required=True),
                 "axis": st.column_config.SelectboxColumn("Axis", options=["X", "Y"], required=True),
                 "mag": st.column_config.NumberColumn("Magnitude (kN/m)", format="%.2f")
             },
@@ -797,124 +939,11 @@ elif app_mode == "Beam Solver":
     text_position_list = []
     with col_b2:
         if st.button("Run Analysis"):
-            # 1. GENERATE NODES (Including sub-discretization for smooth curves)
-            # Create nodes at points of interest
-            poi = [0.0, beam_L] + supp_data['x'].tolist() + pload_data['x'].tolist() + \
-                  uload_data['x_start'].tolist() + uload_data['x_end'].tolist()
-
-            # Add extra points every 100mm to make diagrams smooth
-            extra_points = np.linspace(0, beam_L, int(beam_L / 100)).tolist()
-            raw_nodes = poi + extra_points
-
-            node_coords = sorted(list(set([round(x, 2) for x in raw_nodes if 0 <= x <= beam_L])))
-
-            # 2. OPENSEES SOLVER
-            ops.wipe()
-            ops.model('basic', '-ndm', 2, '-ndf', 3)
-
-            for i, x in enumerate(node_coords):
-                ops.node(i + 1, x, 0.0)
-
-            # Boundary Conditions
-            for _, s in supp_data.iterrows():
-                # 1. Find the index of the node closest to the support X-coordinate
-                # This prevents errors if there are small rounding differences
-                idx = int(np.argmin([abs(x - s['x']) for x in node_coords]))
-
-                # 2. OpenSees tags are 1-based. Force to standard Python int.
-                n_tag = int(idx + 1)
-
-                # 3. Apply fixity based on the type string
-                try:
-                    if s['type'] == 'Pin':
-                        ops.fix(n_tag, 1, 1, 0)
-                    elif s['type'] == 'Roller':
-                        ops.fix(n_tag, 0, 1, 0)
-                    elif s['type'] == 'Fixed':
-                        ops.fix(n_tag, 1, 1, 1)
-                except Exception as e:
-                    st.error(f"Failed to apply support at x={s['x']}: {e}")
-
-            ops.geomTransf('Linear', 1)
-            for i in range(len(node_coords) - 1):
-                ops.element('elasticBeamColumn', i + 1, i + 1, i + 2, 1000.0, E_mod, I_val, 1)
-
-            ops.timeSeries('Linear', 1)
-            ops.pattern('Plain', 1, 1)
-
-            # Point Loads
-            for _, p in pload_data.iterrows():
-                n_tag = int(np.argmin([abs(x - p['x']) for x in node_coords]) + 1)
-                force_n = float(p['mag']) * 1000
-
-                if p['axis'] == 'Y':
-                    ops.load(n_tag, 0.0, force_n, 0.0) # [Fx, Fy, M] -> Fy is index 2
-                else:
-                    ops.load(n_tag, force_n, 0.0, 0.0) # [Fx, Fy, M] -> Fx is index 1
-
-            # Uniform Loads
-            for _, u in uload_data.iterrows():
-                mag_val = float(u['mag'])
-                for i in range(len(node_coords) - 1):
-                    if node_coords[i] >= u['x_start'] and node_coords[i + 1] <= u['x_end']:
-                        if u['axis'] == 'Y':
-                            # '-beamUniform' second argument is transverse load
-                            ops.eleLoad('-ele', i + 1, '-type', '-beamUniform', mag_val)
-                        else:
-                            # Axial loads usually require '-beamUniform' with axial component defined
-                            # or using '-beamPoint' for distributed axial if needed.
-                            # Standard beamUniform in OpenSees typically handles transverse.
-                            # For distributed axial, we apply it as an elemental axial force.
-                            ops.eleLoad('-ele', i + 1, '-type', '-beamUniform', 0.0, mag_val)
-
-            ops.constraints('Transformation')
-            ops.numberer('RCM')
-            ops.system('BandGeneral')
-            ops.test('NormDispIncr', 1.0e-6, 10)
-            ops.algorithm('Linear')
-            ops.integrator('LoadControl', 1.0)
-            ops.analysis('Static')
-            ops.analyze(1)
-
-            # --- 3. EXTRACT RESULTS ---
-            res_x, res_axial, res_shear, res_moment, res_disp = [], [], [], [], []
-
-            for i, x in enumerate(node_coords):
-                res_x.append(x)
-                # Global Y displacement (Index 2 in OpenSees nodeDisp)
-                res_disp.append(ops.nodeDisp(i + 1, 2))
-
-                if i < len(node_coords) - 1:
-                    # force = [Fx1, Fy1, M1, Fx2, Fy2, M2]
-                    f = ops.eleResponse(i + 1, 'force')
-
-                    # Axial: -f[0] converts internal force to Tension(+) / Compression(-) convention
-                    res_axial.append(-f[0] / 1000)
-                    res_shear.append(f[1] / 1000)
-                    res_moment.append(-f[2] / 1e6)  # -f[2] aligns with standard moment convention
-                else:
-                    # For the final node, we use the end-forces of the LAST element
-                    f_last = ops.eleResponse(i, 'force')  # 'i' here is the index of the last element
-                    res_axial.append(f_last[3] / 1000)
-                    res_shear.append(-f_last[4] / 1000)
-                    res_moment.append(f_last[5] / 1e6)
-
-            # --- FIND PEAK VALUES AND LOCATIONS ---
-            # We use absolute maximums for structural design capacity checks
-            idx_max_disp = np.argmax(np.abs(res_disp))
-            idx_max_axial = np.argmax(np.abs(res_axial))
-            idx_max_shear = np.argmax(np.abs(res_shear))
-            idx_max_moment = np.argmax(np.abs(res_moment))
-
-            max_vals = {
-                "Max Displacement": {"val": res_disp[idx_max_disp], "x": res_x[idx_max_disp], "unit": "mm"},
-                "Max Axial": {"val": res_axial[idx_max_axial], "x": res_x[idx_max_axial], "unit": "kN"},
-                "Max Shear": {"val": res_shear[idx_max_shear], "x": res_x[idx_max_shear], "unit": "kN"},
-                "Max Moment": {"val": res_moment[idx_max_moment], "x": res_x[idx_max_moment], "unit": "kNm"}
-            }
+            # Opensees solver function
+            analysis_for_combination = run_beam_solver(beam_L, supp_data, pload_data, uload_data)
 
             # Store in session state for the PDF report
-            st.session_state.max_vals = max_vals
+            st.session_state.max_vals = analysis_for_combination[1] #max_vals
 
             # 4. PLOT 4-TIER DIAGRAM
             # Create Subplots (5 rows now)
@@ -1041,6 +1070,7 @@ elif app_mode == "Beam Solver":
                 for x_pos in arrow_positions:
                     if axis == 'Y':
                         # Vertical Arrows
+
                         tail_y = 0.8 if mag < 0 else -0.8
                         fig.add_annotation(x=x_pos, y=0, ax=x_pos, ay=tail_y,
                                            xref="x1", yref="y1", axref="x1", ayref="y1",
@@ -1069,6 +1099,12 @@ elif app_mode == "Beam Solver":
                                    showarrow=False, font=dict(color=color, size=11), xref="x1", yref="y1")
 
             # --- ADD AXIAL TRACE (Row 2) ---
+            res_x = analysis_for_combination[2]
+            res_axial = analysis_for_combination[3]
+            res_shear = analysis_for_combination[4]
+            res_moment = analysis_for_combination[5]
+            res_disp = analysis_for_combination[6]
+
             fig.add_trace(go.Scatter(
                 x=res_x, y=res_axial,
                 fill='tozeroy',
@@ -1114,7 +1150,7 @@ elif app_mode == "Beam Solver":
 
             st.subheader("📊 Critical Design Values")
             m1, m2, m3 = st.columns(3)
-
+            max_vals = analysis_for_combination[1]
             m1.metric("Max Moment", f"{max_vals['Max Moment']['val']:.2f} kNm",
                       help=f"Located at x = {max_vals['Max Moment']['x']:.0f} mm")
             m2.metric("Max Shear", f"{max_vals['Max Shear']['val']:.2f} kN",
@@ -1148,6 +1184,24 @@ elif app_mode == "Beam Solver":
                     col=1,
                     font=dict(color=config['color'], size=12)
                 )
+
+            st.divider()
+            st.subheader("💾 Export Analysis Data")
+            df_export = analysis_for_combination[0]
+            # Convert DataFrame to CSV string
+            csv_data = df_export.to_csv(index=False).encode('utf-8')
+
+            st.download_button(
+                    label="📥 Download Element Forces (CSV)",
+                    data=csv_data,
+                    file_name='beam_element_forces.csv',
+                    mime='text/csv',
+                    help="Click to download the end forces for every 100mm element."
+                )
+
+            # Optional: Show a preview of the table
+            with st.expander("Preview Element Data"):
+                    st.dataframe(df_export.head(1000))
 
 elif app_mode == "Truss Solver":
     #st.image("arkitech_logo.jpg", width=100)

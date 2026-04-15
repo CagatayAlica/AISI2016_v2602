@@ -45,7 +45,6 @@ BendingCalc= bend.Flexure_calc(sec,mat,factors[0][2],factors[1][2],defs.Kx,defs.
 
 print(BendingCalc.ffMn)
 
-
 ShearCalc = sh.Shear_calc(sec,mat,34,55)
 print(ShearCalc.ffVn)
 print(ShearCalc.ffVnh)
