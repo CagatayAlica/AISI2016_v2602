@@ -456,6 +456,28 @@ def draw_arrows(figure, point_loads, uniform_loads):
                            text=f"<b>{abs(mag)} kN/m ({axis})  {case}</b>",
                            showarrow=False, font=dict(color=color, size=11), xref="x1", yref="y1")
 
+# Draw axial force diagram
+def draw_axial_force(figure, result_x, result_axial):
+    figure.add_trace(go.Scatter(
+        x=result_x, y=result_axial,
+        fill='tozeroy',
+        line=dict(color='orange', shape='hv', width=2),
+        name="Axial Force"
+    ), row=2, col=1)
+
+def draw_shear_force(figure, result_x, result_shear):
+    figure.add_trace(
+        go.Scatter(x=result_x, y=result_shear, fill='tozeroy', name="Shear", line=dict(color='red', shape='hv')),
+        row=3, col=1)
+
+def draw_moment(figure, res_x, result_moment):
+    fig.add_trace(go.Scatter(x=res_x, y=res_moment, fill='tozeroy', name="Moment", line=dict(color='lime')),
+                  row=4, col=1)
+
+def draw_displacement(figure, result_x, result_disp):
+    figure.add_trace(go.Scatter(x=result_x, y=result_disp, fill='tozeroy', name="Disp", line=dict(color='cyan')), row=5,
+                     col=1)
+
 def plot_beam_results(results_df, L, supp_df, pload_df, uload_df):
     # Create 4 rows now. Row 1 is the Schematic.
     fig = make_subplots(
@@ -1092,6 +1114,13 @@ elif app_mode == "Beam Solver":
             # Store in session state for the PDF report
             st.session_state.max_vals = analysis_for_combination[1] #max_vals
 
+            # Results
+            res_x = analysis_for_combination[2]
+            res_axial = analysis_for_combination[3]
+            res_shear = analysis_for_combination[4]
+            res_moment = analysis_for_combination[5]
+            res_disp = analysis_for_combination[6]
+
             # 4. PLOT 4-TIER DIAGRAM
             # Create Subplots (5 rows now)
             fig = make_subplots(
@@ -1113,30 +1142,15 @@ elif app_mode == "Beam Solver":
             # Draw arrows and texts
             draw_arrows(fig, pload_data, uload_data)
 
-            # --- ADD AXIAL TRACE (Row 2) ---
-            res_x = analysis_for_combination[2]
-            res_axial = analysis_for_combination[3]
-            res_shear = analysis_for_combination[4]
-            res_moment = analysis_for_combination[5]
-            res_disp = analysis_for_combination[6]
-
-            fig.add_trace(go.Scatter(
-                x=res_x, y=res_axial,
-                fill='tozeroy',
-                line=dict(color='orange', shape='hv', width=2),
-                name="Axial Force"
-            ), row=2, col=1)
-
-            # Row 2: Disp
-            fig.add_trace(go.Scatter(x=res_x, y=res_disp, fill='tozeroy', name="Disp", line=dict(color='cyan')), row=5,
-                          col=1)
-            # Row 3: Shear
-            fig.add_trace(
-                go.Scatter(x=res_x, y=res_shear, fill='tozeroy', name="Shear", line=dict(color='red', shape='hv')),
-                row=3, col=1)
-            # Row 4: Moment
-            fig.add_trace(go.Scatter(x=res_x, y=res_moment, fill='tozeroy', name="Moment", line=dict(color='lime')),
-                          row=4, col=1)
+            # Internal Forces
+            # Row 1: Axial
+            draw_axial_force(fig, res_x, res_axial)
+            # Row 2: Shear
+            draw_shear_force(fig, res_x, res_shear)
+            # Row 3: Moment
+            draw_moment(fig, res_x, res_moment)
+            # Row 4: Disp
+            draw_displacement(fig, res_x, res_disp)
 
             fig.update_yaxes(range=[-1.5, 2.0], row=1, col=1, visible=False)
             fig.update_layout(height=1100, template="plotly_dark", hovermode="x unified")
