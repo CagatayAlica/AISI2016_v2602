@@ -309,6 +309,14 @@ def run_beam_solver(beam_Length, support_data, point_loads, uniform_loads):
     }
     return df_export, max_vals, res_x, res_axial, res_shear, res_moment, res_disp
 
+def draw_beam_schematic(figure, beam_length):
+    """
+    Beam Schematic
+    """
+    # Draw the Beam
+    figure.add_trace(go.Scatter(x=[0, beam_length], y=[0, 0], mode='lines',
+                                line=dict(color='white', width=6), showlegend=False), row=1, col=1)
+
 def plot_beam_results(results_df, L, supp_df, pload_df, uload_df):
     # Create 4 rows now. Row 1 is the Schematic.
     fig = make_subplots(
@@ -959,8 +967,9 @@ elif app_mode == "Beam Solver":
 
             # --- ROW 1: SCHEMATIC ---
             # Draw the Beam
-            fig.add_trace(go.Scatter(x=[0, beam_L], y=[0, 0], mode='lines',
-                                     line=dict(color='white', width=6), showlegend=False), row=1, col=1)
+            draw_beam_schematic(fig,beam_L)
+            #fig.add_trace(go.Scatter(x=[0, beam_L], y=[0, 0], mode='lines',
+                                     #line=dict(color='white', width=6), showlegend=False), row=1, col=1)
 
             # Draw Supports
             for _, s in supp_data.iterrows():
