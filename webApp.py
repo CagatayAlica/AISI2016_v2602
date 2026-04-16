@@ -317,6 +317,145 @@ def draw_beam_schematic(figure, beam_length):
     figure.add_trace(go.Scatter(x=[0, beam_length], y=[0, 0], mode='lines',
                                 line=dict(color='white', width=6), showlegend=False), row=1, col=1)
 
+def draw_beam_supports(supports_data):
+    """
+    Draw beam supports
+    """
+    # Draw Supports
+    for _, s in supports_data.iterrows():
+        px = s['x']
+        if s['type'] == 'Pin':
+            # Triangle for Pin
+            fig.add_trace(go.Scatter(x=[px - 80, px, px + 80, px - 80], y=[-0.5, 0, -0.5, -0.5],
+                                     fill="toself", line=dict(color='lightgray'), mode='lines',
+                                     showlegend=False), row=1, col=1)
+        elif s['type'] == 'Roller':
+            # Triangle with two circles under it
+            fig.add_trace(go.Scatter(x=[px - 80, px, px + 80, px - 80], y=[-0.3, 0, -0.3, -0.3],
+                                     fill="toself", line=dict(color='lightgray'), mode='lines',
+                                     showlegend=False), row=1, col=1)
+            fig.add_trace(go.Scatter(x=[px - 40, px + 40], y=[-0.45, -0.45], mode='markers',
+                                     marker=dict(symbol='circle', size=8, color='white'), showlegend=False),
+                          row=1, col=1)
+
+def draw_dimension_lines(beam_length, supports):
+                #    1. Collect all critical X-points
+                crit_points = [0, beam_length]
+                for _, s in supports.iterrows():
+                    crit_points.append(s['x'])
+
+                #    2. Sort and remove duplicates
+                crit_points = sorted(list(set(crit_points)))
+
+                #    3. Draw dimension strings between points
+                dim_y = -1.2  # Vertical position for the dimension line
+
+                for i in range(len(crit_points) - 1):
+                    x1 = crit_points[i]
+                    x2 = crit_points[i + 1]
+                    dist = x2 - x1
+
+                    # Only draw if there is a measurable distance
+                    if dist > 1:
+                        # Main Horizontal Line
+                        fig.add_shape(type="line", x0=x1, y0=dim_y, x1=x2, y1=dim_y,
+                                      line=dict(color="gray", width=1, dash="dot"), row=1, col=1)
+
+                        # Vertical Tick Marks (the 'slashes')
+                        for tick_x in [x1, x2]:
+                            fig.add_shape(type="line", x0=tick_x, y0=dim_y - 0.1, x1=tick_x, y1=dim_y + 0.1,
+                                          line=dict(color="gray", width=2), row=1, col=1)
+
+                        # Dimension Text (Centered between ticks)
+                        fig.add_annotation(
+                            x=(x1 + x2) / 2, y=dim_y - 0.2,
+                            text=f"{dist:.0f} mm",
+                            showarrow=False, font=dict(color="gray", size=10),
+                            xref="x1", yref="y1"
+                        )
+
+# Draw Arrows with Text Values
+def draw_arrows(point_loads, uniform_loads):
+    for _, p in point_loads.iterrows():
+        mag = p['mag']
+        axis = p['axis']
+        case = p['case']
+
+        if axis == 'Y':
+            tail_y = 1.2 if mag < 0 else -1.2
+            color = "#FF4B4B" if mag < 0 else "#32CD32"
+            # Arrow
+            fig.add_annotation(x=p['x'], y=0, ax=p['x'], ay=tail_y, xref="x1", yref="y1", axref="x1", ayref="y1",
+                               showarrow=True, arrowhead=2, arrowcolor=color, arrowwidth=3)
+            # Value Text
+            fig.add_annotation(x=p['x'], y=tail_y * 1.2, text=f"<b>{abs(mag)} kN {case}</b>",
+                               showarrow=False, font=dict(color=color, size=12))
+        else:
+            tail_x = p['x'] - (400 if mag > 0 else -400)
+            color = "cyan"
+            fig.add_annotation(x=p['x'], y=0, ax=tail_x, ay=0, xref="x1", yref="y1", axref="x1", ayref="y1",
+                               showarrow=True, arrowhead=2, arrowcolor=color, arrowwidth=3)
+            fig.add_annotation(x=tail_x, y=0.3, text=f"<b>{abs(mag)} kN {case}</b>",
+                               showarrow=False, font=dict(color=color, size=12))
+
+    # Uniform Load Sketch (Vertical only for Y-axis)
+    for _, u in uniform_loads.iterrows():
+        if u['axis'] == 'Y':
+            h = 0.3 if u['mag'] < 0 else -0.3
+            fig.add_shape(type="rect", x0=u['x_start'], y0=0, x1=u['x_end'], y1=h,
+                          fillcolor="rgba(255,165,0,0.2)", line=dict(width=1), row=1, col=1)
+
+    # 4. Draw Uniform Loads as Spaced Arrows
+    for _, u in uniform_loads.iterrows():
+        mag = u['mag']
+        axis = u['axis']
+        case = u['case']
+        color = "orange"
+
+        # 1. DRAW TRANSPARENT RECTANGLE
+        # If Y-axis, box is above/below beam. If X-axis, box sits on the beam.
+        box_h = 0.5 if axis == 'Y' else 0.2
+        fig.add_shape(type="rect",
+                      x0=u['x_start'], y0=box_h if mag < 0 else 0,
+                      x1=u['x_end'], y1=0 if mag < 0 else -box_h,
+                      fillcolor="rgba(255, 165, 0, 0.15)",  # Transparent Orange
+                      line=dict(color=color, width=1, dash='dot'), row=1, col=1)
+
+        # 2. DRAW SPACED ARROWS
+        num_arrows = max(2, int(abs(u['x_end'] - u['x_start']) / 500) + 1)
+        arrow_positions = np.linspace(u['x_start'], u['x_end'], num_arrows)
+
+        for x_pos in arrow_positions:
+            if axis == 'Y':
+                # Vertical Arrows
+
+                tail_y = 0.8 if mag < 0 else -0.8
+                fig.add_annotation(x=x_pos, y=0, ax=x_pos, ay=tail_y,
+                                   xref="x1", yref="y1", axref="x1", ayref="y1",
+                                   showarrow=True, arrowhead=1, arrowcolor=color)
+            else:
+                # Horizontal Arrows (Along the beam axis)
+                # If mag > 0, points Right. If mag < 0, points Left.
+                head_x = x_pos
+                tail_x = x_pos - (300 if mag > 0 else -300)
+                fig.add_annotation(x=head_x, y=0, ax=tail_x, ay=0,
+                                   xref="x1", yref="y1", axref="x1", ayref="y1",
+                                   showarrow=True, arrowhead=1, arrowcolor=color)
+
+        # 3. ADD VALUE TEXT
+        text_y = 1.2 if mag < 0 else -1.2
+        text_x = (u['x_start'] + u['x_end']) / 2
+        text_position = [text_x, text_y]
+
+        if text_position in text_position_list:
+            text_y = text_y + 0.3 if mag < 0 else text_y - 0.3
+            text_position = [text_x, text_y]
+        text_position_list.append(text_position)
+
+        fig.add_annotation(x=text_x, y=text_y,
+                           text=f"<b>{abs(mag)} kN/m ({axis})  {case}</b>",
+                           showarrow=False, font=dict(color=color, size=11), xref="x1", yref="y1")
+
 def plot_beam_results(results_df, L, supp_df, pload_df, uload_df):
     # Create 4 rows now. Row 1 is the Schematic.
     fig = make_subplots(
@@ -950,7 +1089,6 @@ elif app_mode == "Beam Solver":
             # Opensees solver function
             analysis_for_combination = run_beam_solver(beam_L, supp_data, pload_data, uload_data)
 
-
             # Store in session state for the PDF report
             st.session_state.max_vals = analysis_for_combination[1] #max_vals
 
@@ -968,145 +1106,12 @@ elif app_mode == "Beam Solver":
             # --- ROW 1: SCHEMATIC ---
             # Draw the Beam
             draw_beam_schematic(fig,beam_L)
-            #fig.add_trace(go.Scatter(x=[0, beam_L], y=[0, 0], mode='lines',
-                                     #line=dict(color='white', width=6), showlegend=False), row=1, col=1)
-
             # Draw Supports
-            for _, s in supp_data.iterrows():
-                px = s['x']
-                if s['type'] == 'Pin':
-                    # Triangle for Pin
-                    fig.add_trace(go.Scatter(x=[px - 80, px, px + 80, px - 80], y=[-0.5, 0, -0.5, -0.5],
-                                             fill="toself", line=dict(color='lightgray'), mode='lines',
-                                             showlegend=False), row=1, col=1)
-                elif s['type'] == 'Roller':
-                    # Triangle with two circles under it
-                    fig.add_trace(go.Scatter(x=[px - 80, px, px + 80, px - 80], y=[-0.3, 0, -0.3, -0.3],
-                                             fill="toself", line=dict(color='lightgray'), mode='lines',
-                                             showlegend=False), row=1, col=1)
-                    fig.add_trace(go.Scatter(x=[px - 40, px + 40], y=[-0.45, -0.45], mode='markers',
-                                             marker=dict(symbol='circle', size=8, color='white'), showlegend=False),
-                                  row=1, col=1)
-
-            # --- DIMENSION LINE LOGIC ---
-            # 1. Collect all critical X-points
-            crit_points = [0, beam_L]
-            for _, s in supp_data.iterrows():
-                crit_points.append(s['x'])
-
-            # 2. Sort and remove duplicates
-            crit_points = sorted(list(set(crit_points)))
-
-            # 3. Draw dimension strings between points
-            dim_y = -1.2  # Vertical position for the dimension line
-
-            for i in range(len(crit_points) - 1):
-                x1 = crit_points[i]
-                x2 = crit_points[i + 1]
-                dist = x2 - x1
-
-                # Only draw if there is a measurable distance
-                if dist > 1:
-                    # Main Horizontal Line
-                    fig.add_shape(type="line", x0=x1, y0=dim_y, x1=x2, y1=dim_y,
-                                  line=dict(color="gray", width=1, dash="dot"), row=1, col=1)
-
-                    # Vertical Tick Marks (the 'slashes')
-                    for tick_x in [x1, x2]:
-                        fig.add_shape(type="line", x0=tick_x, y0=dim_y - 0.1, x1=tick_x, y1=dim_y + 0.1,
-                                      line=dict(color="gray", width=2), row=1, col=1)
-
-                    # Dimension Text (Centered between ticks)
-                    fig.add_annotation(
-                        x=(x1 + x2) / 2, y=dim_y - 0.2,
-                        text=f"{dist:.0f} mm",
-                        showarrow=False, font=dict(color="gray", size=10),
-                        xref="x1", yref="y1"
-                    )
-
-
-            # Draw Arrows with Text Values
-            for _, p in pload_data.iterrows():
-                mag = p['mag']
-                axis = p['axis']
-                case = p['case']
-
-                if axis == 'Y':
-                    tail_y = 1.2 if mag < 0 else -1.2
-                    color = "#FF4B4B" if mag < 0 else "#32CD32"
-                    # Arrow
-                    fig.add_annotation(x=p['x'], y=0, ax=p['x'], ay=tail_y, xref="x1", yref="y1", axref="x1", ayref="y1",
-                                       showarrow=True, arrowhead=2, arrowcolor=color, arrowwidth=3)
-                    # Value Text
-                    fig.add_annotation(x=p['x'], y=tail_y * 1.2, text=f"<b>{abs(mag)} kN {case}</b>",
-                                       showarrow=False, font=dict(color=color, size=12))
-                else:
-                    tail_x = p['x'] - (400 if mag > 0 else -400)
-                    color = "cyan"
-                    fig.add_annotation(x=p['x'], y=0, ax=tail_x, ay=0, xref="x1", yref="y1", axref="x1", ayref="y1",
-                                       showarrow=True, arrowhead=2, arrowcolor=color, arrowwidth=3)
-                    fig.add_annotation(x=tail_x, y=0.3, text=f"<b>{abs(mag)} kN {case}</b>",
-                                       showarrow=False, font=dict(color=color, size=12))
-
-            # Uniform Load Sketch (Vertical only for Y-axis)
-            for _, u in uload_data.iterrows():
-                if u['axis'] == 'Y':
-                    h = 0.3 if u['mag'] < 0 else -0.3
-                    fig.add_shape(type="rect", x0=u['x_start'], y0=0, x1=u['x_end'], y1=h,
-                                  fillcolor="rgba(255,165,0,0.2)", line=dict(width=1), row=1, col=1)
-
-            # 4. Draw Uniform Loads as Spaced Arrows
-
-            for _, u in uload_data.iterrows():
-                mag = u['mag']
-                axis = u['axis']
-                case =u['case']
-                color = "orange"
-
-
-                # 1. DRAW TRANSPARENT RECTANGLE
-                # If Y-axis, box is above/below beam. If X-axis, box sits on the beam.
-                box_h = 0.5 if axis == 'Y' else 0.2
-                fig.add_shape(type="rect",
-                              x0=u['x_start'], y0=box_h if mag < 0 else 0,
-                              x1=u['x_end'], y1=0 if mag < 0 else -box_h,
-                              fillcolor="rgba(255, 165, 0, 0.15)",  # Transparent Orange
-                              line=dict(color=color, width=1, dash='dot'), row=1, col=1)
-
-                # 2. DRAW SPACED ARROWS
-                num_arrows = max(2, int(abs(u['x_end'] - u['x_start']) / 500) + 1)
-                arrow_positions = np.linspace(u['x_start'], u['x_end'], num_arrows)
-
-                for x_pos in arrow_positions:
-                    if axis == 'Y':
-                        # Vertical Arrows
-
-                        tail_y = 0.8 if mag < 0 else -0.8
-                        fig.add_annotation(x=x_pos, y=0, ax=x_pos, ay=tail_y,
-                                           xref="x1", yref="y1", axref="x1", ayref="y1",
-                                           showarrow=True, arrowhead=1, arrowcolor=color)
-                    else:
-                        # Horizontal Arrows (Along the beam axis)
-                        # If mag > 0, points Right. If mag < 0, points Left.
-                        head_x = x_pos
-                        tail_x = x_pos - (300 if mag > 0 else -300)
-                        fig.add_annotation(x=head_x, y=0, ax=tail_x, ay=0,
-                                           xref="x1", yref="y1", axref="x1", ayref="y1",
-                                           showarrow=True, arrowhead=1, arrowcolor=color)
-
-                # 3. ADD VALUE TEXT
-                text_y = 1.2 if mag < 0 else -1.2
-                text_x = (u['x_start'] + u['x_end']) / 2
-                text_position = [text_x, text_y]
-
-                if text_position in text_position_list:
-                    text_y = text_y + 0.3 if mag < 0 else text_y - 0.3
-                    text_position = [text_x, text_y]
-                text_position_list.append(text_position)
-
-                fig.add_annotation(x=text_x, y=text_y,
-                                   text=f"<b>{abs(mag)} kN/m ({axis})  {case}</b>",
-                                   showarrow=False, font=dict(color=color, size=11), xref="x1", yref="y1")
+            draw_beam_supports(supp_data)
+            # Draw dimension line
+            draw_dimension_lines(beam_L, supp_data)
+            # Draw arrows and texts
+            draw_arrows(pload_data, uload_data)
 
             # --- ADD AXIAL TRACE (Row 2) ---
             res_x = analysis_for_combination[2]
