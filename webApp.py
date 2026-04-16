@@ -482,8 +482,8 @@ def draw_shear_force(figure, result_x, result_shear):
         go.Scatter(x=result_x, y=result_shear, fill='tozeroy', name="Shear", line=dict(color='red', shape='hv')),
         row=3, col=1)
 
-def draw_moment(figure, res_x, result_moment):
-    fig.add_trace(go.Scatter(x=res_x, y=res_moment, fill='tozeroy', name="Moment", line=dict(color='lime')),
+def draw_moment(figure, result_x, result_moment):
+    figure.add_trace(go.Scatter(x=result_x, y=result_moment, fill='tozeroy', name="Moment", line=dict(color='lime')),
                   row=4, col=1)
 
 def draw_displacement(figure, result_x, result_disp):
@@ -1118,6 +1118,34 @@ elif app_mode == "Beam Solver":
     text_position_list = []
     with col_b2:
         if st.button("Run Analysis"):
+            # Load combinations as per AISI LRFD
+            ### LRFD Combinations
+            load_factors = {
+                1: {"Dead": 1.4},
+                2: {"Dead": 1.2, "Live":1.6},
+                3: {"Dead": 1.2, "Live":1.6, "Roof Live":0.5},
+                4: {"Dead": 1.2, "Live": 1.6, "Snow": 0.5},
+                5: {"Dead": 1.2, "Roof Live": 1.6, "Live": 1.0},
+                6: {"Dead": 1.2, "Snow": 1.6, "Live": 1.0},
+                7: {"Dead": 1.2, "Roof Live": 1.6, "Wind_1": 0.5},
+                8: {"Dead": 1.2, "Roof Live": 1.6, "Wind_2": 0.5},
+                9: {"Dead": 1.2, "Snow": 1.6, "Wind_1": 0.5},
+                10: {"Dead": 1.2, "Snow": 1.6, "Wind_2": 0.5},
+                11: {"Dead": 1.2, "Wind_1": 1.0, "Live": 1.0, "Roof Live":0.5},
+                12: {"Dead": 1.2, "Wind_2": 1.0, "Live": 1.0, "Roof Live": 0.5},
+                13: {"Dead": 1.2, "Wind_1": 1.0, "Live": 1.0, "Snow": 0.5},
+                14: {"Dead": 1.2, "Wind_2": 1.0, "Live": 1.0, "Snow": 0.5},
+                15: {"Dead": 0.9, "Wind_1": 1.0},
+                16: {"Dead": 0.9, "Wind_2": 1.0},
+                17: {"Dead": 1.2, "Earthquake": 1.0, "Live": 1.0, "Snow": 0.2},
+                    }
+            pload_data_loadcases = pload_data
+            pload_data_combinations = pload_data
+
+            uload_data_loadcases = uload_data
+            uload_data_combinations = uload_data
+
+
             # Opensees solver function
             analysis_for_combination = run_beam_solver(beam_L, supp_data, pload_data, uload_data)
 
