@@ -1154,10 +1154,7 @@ elif app_mode == "Beam Solver":
             draw_moment(fig, res_x, res_moment)
             ### Row 4: Disp
             draw_displacement(fig, res_x, res_disp)
-
-            fig.update_yaxes(range=[-1.5, 2.0], row=1, col=1, visible=False)
-            fig.update_layout(height=1100, template="plotly_dark", hovermode="x unified")
-
+            # Plot Shapes
             st.plotly_chart(fig, use_container_width=True)
 
             # Store the figure in session state so it's accessible for download
