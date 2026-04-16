@@ -135,7 +135,7 @@ def run_fsm_analysis():
     step1 = org.Buckle(selected_unit=select_unit, section=sec, material=mat, case=page_case)
 
     return step1.x, step1.y, step1.values
-
+# -------------------------------------------------------------------------------------------------------------------- #
 # --- Beam SOLVER (Placeholder) ---
 def save_to_section_library(name, data_dict, filename="section_library.json"):
     library = {}
@@ -680,7 +680,7 @@ def generate_pdf_report(section_name, max_vals, fig):
         pdf.image(tmp.name, x=10, w=190)
 
     return pdf.output(dest='S').encode('latin-1')
-
+# -------------------------------------------------------------------------------------------------------------------- #
 # --- Truss SOLVER (Placeholder) ---
 def generate_truss_pdf(nodes, elements, project_name="Truss Analysis"):
     buffer = io.BytesIO()
@@ -1055,9 +1055,7 @@ if app_mode == "FSM Buckling":
 
 elif app_mode == "Beam Solver":
     st.title("🚀 Continuous Beam Solver")
-
     col_b1, col_b2 = st.columns([1, 2])
-
     with col_b1:
         st.subheader("Section & Geometry")
         library = load_section_library()
