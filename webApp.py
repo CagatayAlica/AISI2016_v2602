@@ -309,6 +309,18 @@ def run_beam_solver(beam_Length, support_data, point_loads, uniform_loads):
     }
     return df_export, max_vals, res_x, res_axial, res_shear, res_moment, res_disp
 
+# Creating subplots
+def create_subplots(row_number):
+    new_figure = make_subplots(
+        rows=row_number, cols=1, shared_xaxes=True, vertical_spacing=0.05,
+        row_heights=[0.2, 0.2, 0.2, 0.2, 0.2],
+        subplot_titles=("Beam Schematic", "Axial Force (kN)", "Shear Force (kN)", "Bending Moment (kNm)",
+                        "Deflection (mm)")
+    )
+    new_figure.update_yaxes(range=[-1.5, 2.0], row=1, col=1, visible=False)
+    new_figure.update_layout(height=1100, template="plotly_dark", hovermode="x unified")
+    return new_figure
+
 def draw_beam_schematic(figure, beam_length):
     """
     Beam Schematic
@@ -456,7 +468,7 @@ def draw_arrows(figure, point_loads, uniform_loads):
                            text=f"<b>{abs(mag)} kN/m ({axis})  {case}</b>",
                            showarrow=False, font=dict(color=color, size=11), xref="x1", yref="y1")
 
-# Draw axial force diagram
+# Draw diagrams
 def draw_axial_force(figure, result_x, result_axial):
     figure.add_trace(go.Scatter(
         x=result_x, y=result_axial,
@@ -1121,35 +1133,26 @@ elif app_mode == "Beam Solver":
             res_moment = analysis_for_combination[5]
             res_disp = analysis_for_combination[6]
 
-            # 4. PLOT 4-TIER DIAGRAM
-            # Create Subplots (5 rows now)
-            fig = make_subplots(
-                rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.05,
-                row_heights=[0.2, 0.2, 0.2, 0.2, 0.2],
-                subplot_titles=("Beam Schematic", "Axial Force (kN)", "Shear Force (kN)", "Bending Moment (kNm)",
-                                "Deflection (mm)")
-            )
-            fig.update_yaxes(range=[-1.5, 2.0], row=1, col=1, visible=False)
-            fig.update_layout(height=1100, template="plotly_dark", hovermode="x unified")
-
-            # --- ROW 1: SCHEMATIC ---
-            # Draw the Beam
+            # Plot Beam and Diagrams
+            ### Create Subplots (5 rows now)
+            fig = create_subplots(5)
+            ### Draw the Beam
             draw_beam_schematic(fig,beam_L)
-            # Draw Supports
+            ### Draw Supports
             draw_beam_supports(fig, supp_data)
-            # Draw dimension line
+            ### Draw dimension line
             draw_dimension_lines(fig, beam_L, supp_data)
-            # Draw arrows and texts
+            ### Draw arrows and texts
             draw_arrows(fig, pload_data, uload_data)
 
             # Internal Forces
-            # Row 1: Axial
+            ### Row 1: Axial
             draw_axial_force(fig, res_x, res_axial)
-            # Row 2: Shear
+            ### Row 2: Shear
             draw_shear_force(fig, res_x, res_shear)
-            # Row 3: Moment
+            ### Row 3: Moment
             draw_moment(fig, res_x, res_moment)
-            # Row 4: Disp
+            ### Row 4: Disp
             draw_displacement(fig, res_x, res_disp)
 
             fig.update_yaxes(range=[-1.5, 2.0], row=1, col=1, visible=False)
