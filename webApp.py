@@ -121,7 +121,7 @@ print(sec)
 # Defining the required functions
 # ======================================================================================================================
 # --- FSM SOLVER (Placeholder) ---
-def run_fsm_analysis():
+def run_fsm_analysis(p_case):
     """
     This is where your Finite Strip Method logic goes.
     It usually involves:
@@ -132,9 +132,58 @@ def run_fsm_analysis():
     # Simulating a calculation delay
     time.sleep(1)
 
-    step1 = org.Buckle(selected_unit=select_unit, section=sec, material=mat, case=page_case)
+    step1 = org.Buckle(selected_unit=select_unit, section=sec, material=mat, case=p_case)
 
     return step1.x, step1.y, step1.values
+
+def export_to_cufsm_txt(section, material):
+    # Prepare the nodes and the elements for analysis
+    CUFSM_Nodes = []
+    CUFSM_Elements = []
+    # Prepare the nodes and the elements for CUFSM software input ==> PY_Cufsm.txt
+    CUFSM_Nodes_export = []
+    CUFSM_Elements_export = []
+
+    nodes = section.nodes
+    x = nodes[:, 1]
+    y = nodes[:, 2]
+
+    if unit_system == 'METRIC':
+        toInches = 1.0 / 25.4
+        toKsi = 0.1450377377
+    else:
+        toInches = 1.0
+        toKsi = 1.0
+
+    for i in range(len(x)):
+        CUFSM_Nodes.append([i + 1, float(x[i]) * toInches, float(y[i]) * toInches, 1, 1, 1, 1, material.fy * toKsi])
+        CUFSM_Nodes_export.append([i + 1, float(x[i]) * toInches, float(y[i]) * toInches, 1, 1, 1, 1, material.fy * toKsi])
+
+    for i in range(len(x) - 1):
+        CUFSM_Elements.append([i + 1, i + 1, i + 2, section.t * toInches, 100])
+        CUFSM_Elements_export.append([i + 1, i + 1, i + 2, section.t * toInches, 100])
+
+    for i in CUFSM_Nodes:
+        i[0] = i[0] - 1
+        i[7] = 0
+    for i in CUFSM_Elements:
+        i[0] = i[0] - 1
+        i[1] = i[1] - 1
+        i[2] = i[2] - 1
+        i[4] = 0
+
+    header1 = "NODES:\n------------"
+    header2 = "\nELEMENTS:\n------------"
+    with open('PY_Cufsm.txt', 'w') as f:
+        f.write(header1 + "\n")
+        for item in CUFSM_Nodes_export:
+            f.write(" ".join(map(str, item)) + "\n")
+        f.write(header2 + "\n")
+        for item in CUFSM_Elements_export:
+            f.write(" ".join(map(str, item)) + "\n")
+
+    return CUFSM_Nodes_export, CUFSM_Elements_export
+
 # -------------------------------------------------------------------------------------------------------------------- #
 # --- Beam SOLVER (Placeholder) ---
 def save_to_section_library(name, data_dict, filename="section_library.json"):
@@ -918,8 +967,10 @@ def plot_section(shape_type, D, B, t, R, C=0):
         # Actual sequence: Top Lip -> Top Flange -> Web -> Bottom Flange -> Bottom Lip
         x = [b_cl, b_cl, 0, 0, b_cl, b_cl]
         y = [d_cl - c_cl, d_cl, d_cl, 0, 0, c_cl]
-
-    fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(color='#1f77b4', width=t * 2)))
+    if is_imperial:
+        fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(color='#1f77b4', width=t * 20)))
+    else:
+        fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(color='#1f77b4', width=t * 2)))
 
     fig.update_layout(
         template="plotly_dark",
@@ -940,22 +991,38 @@ if app_mode == "FSM Buckling":
     # --- PUT ALL YOUR EXISTING FSM CODE HERE ---
     #st.image("arkitech_logo.jpg", width=100)
     st.title("FSM Buckling Analysis")
-    page_case = st.sidebar.selectbox("Case", ['AXIAL', 'BENDING'])
+
+    axial_factors = []
+    bending_factors = []
+
     # --- UI LAYOUT ---
     col1, col2 = st.columns([1, 2])
+
 
     with col1:
         # Add this at the top of your sidebar section
         # Place this at the very beginning of your script
         st.subheader("Analysis Controls")
-        # THE BUTTON
-        if st.button("🚀 Run Finite Strip Analysis"):
-            with st.spinner('Calculating buckling modes...'):
-                lengths, factors, values = run_fsm_analysis()
-                st.success("Analysis Complete!")
-                st.session_state['fsm_data'] = (lengths, factors, values)
+
+        if st.button("🚀 Run Full Finite Strip Analysis"):
+            with st.spinner('Calculating Axial and Bending modes...'):
+                # Run both analyses
+                res_axial = run_fsm_analysis('AXIAL')
+                res_bending = run_fsm_analysis('BENDING')
+
+                # Store in session state as a dictionary
+                st.session_state['fsm_results'] = {
+                    'AXIAL': res_axial,  # (lengths, factors, values)
+                    'BENDING': res_bending
+                }
+                st.success("Both modes analyzed!")
+
+        # --- SELECTION BOX FOR PLOTTING ---
+        if 'fsm_results' in st.session_state:
+            plot_case = st.selectbox("Select Mode to Visualize", ["AXIAL", "BENDING"])
+            lengths, factors, values = st.session_state['fsm_results'][plot_case]
         else:
-            st.info("Adjust dimensions and click 'Run' to see buckling analysis.")
+            st.info("Run analysis to view charts.")
 
         # Top: Cross Section Plot
         # (Using the plotting logic from previous response)
@@ -967,9 +1034,8 @@ if app_mode == "FSM Buckling":
 
     with col2:
         # Bottom: FSM Signature Curve Plot
-        if 'fsm_data' in st.session_state:
-            st.subheader(f'FSM Signature Curve for {page_case} :part_alternation_mark:', divider="gray")
-            lengths, factors, values = st.session_state['fsm_data']
+        if 'fsm_results' in st.session_state:
+            st.subheader(f'FSM Signature Curve: {plot_case}', divider="gray")
 
             fig_fsm = go.Figure()
             fig_fsm.add_trace(go.Scatter(
@@ -1035,23 +1101,27 @@ if app_mode == "FSM Buckling":
                 st.write(f'**Distortional Mode:** λ = {values[1][2]:.3f}')
 
             # ... Saving the data ...
-
             st.subheader("💾 Add to Section Library")
             section_name = selected_name + '_fy:' + str(defs.fy) if is_imperial else sec.descp_Plot + '_fy:' + str(defs.fy)
 
             if st.button("Save Section Properties"):
-                # Example data to save from your analysis
+                # Get both result sets from session state
+                axial_vals = st.session_state['fsm_results']['AXIAL'][2]
+                bending_vals = st.session_state['fsm_results']['BENDING'][2]
+                # Saving the section to the database
                 props = {
                         "Unit":select_unit.name,
                         "Section":section_name,
-                        "DesignFor": values[0][0],  # AXIAL or BENDING
                         "Stress": defs.fy,
                         "Properties":sec.toJSON,
-                        "Local_Factor":values[0][2],
-                        "Distortional_Factor": values[1][2],
+                        "BucklingFactors":{"AXIAL":{"Local_Factor":axial_vals[0][2], "Distortional_Factor": axial_vals[1][2]},
+                                           "BENDING":{"Local_Factor":bending_vals[0][2], "Distortional_Factor": bending_vals[1][2]}},
                 }
                 save_to_section_library(section_name, props)
                 st.success(f"Section '{section_name}' added to library!")
+
+    # Export data to verification on CUFSM
+    export_to_cufsm_txt(sec, mat)
 
 elif app_mode == "Beam Solver":
     st.title("🚀 Continuous Beam Solver")
@@ -1409,7 +1479,7 @@ elif app_mode == "Strip Width Calculator":
 
     with col_in:
         st.subheader("Profile Geometry")
-        shape = st.selectbox("Select Shape", ["Lipped C-Shape", "U-Shape"])
+        shape = st.selectbox("Select Shape", ["Lipped C-Shape"])
 
         # Dimensions
         D = defs.A
@@ -1434,7 +1504,10 @@ elif app_mode == "Strip Width Calculator":
                 total_width = straights + (4 * arc_length)
 
             # --- VISUALIZATION ---
-            st.metric(label="Required Coil Width", value=f"{total_width:.2f} mm")
+            if is_imperial:
+                st.metric(label="Required Coil Width", value=f"{total_width:.2f} in")
+            else:
+                st.metric(label="Required Coil Width", value=f"{total_width:.2f} mm")
 
             # Add the Section Plot here
             section_fig = plot_section(shape, D, B, t, R, C)
@@ -1458,17 +1531,28 @@ elif app_mode == "Strip Width Calculator":
             total_width = straights + (4 * arc_length)
 
         # Display Result
-        st.metric(label="Required Coil Width", value=f"{total_width:.2f} mm")
-
-        # Breakdown Table
-        st.table({
-            "Component": ["Bends", "Straight Segments", "Neutral Axis Pos"],
-            "Value": [
-                "2" if shape == "U-Shape" else "4",
-                f"{straights:.2f} mm",
-                f"{(k_factor * t):.3f} mm from inside"
-            ]
-        })
+        if is_imperial:
+            st.metric(label="Required Coil Width", value=f"{total_width:.2f} in")
+            # Breakdown Table
+            st.table({
+                "Component": ["Bends", "Straight Segments", "Neutral Axis Pos"],
+                "Value": [
+                    "2" if shape == "U-Shape" else "4",
+                    f"{straights:.2f} in",
+                    f"{(k_factor * t):.3f} in from inside"
+                ]
+            })
+        else:
+            st.metric(label="Required Coil Width", value=f"{total_width:.2f} mm")
+            # Breakdown Table
+            st.table({
+                "Component": ["Bends", "Straight Segments", "Neutral Axis Pos"],
+                "Value": [
+                    "2" if shape == "U-Shape" else "4",
+                    f"{straights:.2f} mm",
+                    f"{(k_factor * t):.3f} mm from inside"
+                ]
+            })
 
         st.caption("Note: Calculation uses the Centerline (Mean Line) method adjusted by the K-factor.")
 
@@ -1496,7 +1580,6 @@ elif app_mode == "Strap Bracing":
         st.warning("Library is empty. Please enter stud properties manually.")
         t_stud = st.number_input("Manual Stud Thickness (mm)", value=1.2)
         fy_stud = st.number_input("Manual Stud Fy (MPa)", value=350)
-
 
     col_in, col_res = st.columns([1, 1])
 
